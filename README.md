@@ -90,7 +90,7 @@ Balanced Alpha flips the script: we optimize for **clarity, trust, and full-visi
 ---
 
 ## ⚖️ Compliance & Trust
-- Prominent disclaimer: **Educational only, not investment advice.**  
+- Prominent disclaimer: **Educational only, not investment advice.(we are not neshanth)**  
 - Model cards + calibration charts.  
 - Monthly bias audit report (source mix, stance balance).  
 
