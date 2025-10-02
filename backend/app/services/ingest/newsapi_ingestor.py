@@ -1,95 +1,71 @@
-import httpx, hashlib, datetime as dt
-from app.services.ingest.cleaner import clean_html
-from app.services.ingest.linker import link_tickers
-from app.core.config import settings
-from app.core.db import SessionLocal, engine
-from app.core.logger import logger
-from app.models.document import Document
-from app.models.doc_ticker import DocTicker
-from app.models.base import Base
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from __future__ import annotations
+from typing import List, Dict, Any, Optional
+import httpx
+from urllib.parse import urlparse
 
-NEWSAPI_URL = "https://newsapi.org/v2/everything"
+from app.core.settings import get_settings
+from app.core.logger import get_logger
 
-def sha256(s: str) -> str:
-    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+log = get_logger("ingest.newsapi")
+settings = get_settings()
 
-def ensure_tables():
-    Base.metadata.create_all(bind=SessionLocal.kw["bind"])  # type: ignore
+def _excerpt_if_needed(text: Optional[str], domain: Optional[str]) -> str:
+    t = (text or "").strip()
+    if not t:
+        return ""
+    d = (domain or "").lower()
+    if (not settings.FEATURE_STORE_FULLTEXT) or (d in settings.excerpt_domains_set):
+        return t[: settings.EXCERPT_MAX_CHARS]
+    return t
 
-def fetch_newsapi(query: str, page_size: int = 20):
+def ingest_newsapi(tickers: List[str], limit_per_ticker: int) -> Dict[str, Any]:
+    """
+    Query NewsAPI for each ticker keyword and return normalized items.
+    Does NOT persist; returns data for the caller to store.
+    """
     if not settings.NEWSAPI_KEY:
-        logger.warning("NEWSAPI_KEY not set; skip NewsAPI.")
-        return []
-    params = {
-        "q": query,
-        "pageSize": page_size,
-        "language": "en",
-        "sortBy": "publishedAt",
-        "apiKey": settings.NEWSAPI_KEY,
-    }
-    with httpx.Client(timeout=20) as client:
-        r = client.get(NEWSAPI_URL, params=params)
-        r.raise_for_status()
-        return r.json().get("articles", [])
+        log.warning("NEWSAPI_KEY not set — skipping NewsAPI ingest")
+        return {"provider": "newsapi", "items": [], "count": 0, "skipped": True}
 
-def ingest_newsapi(tickers: list[str], limit_per_ticker: int = 10) -> dict:
-    ensure_tables()
-    inserted, skipped = 0, 0
-    with SessionLocal() as db:
-        for t in tickers:
-            # Basic query: ticker OR company name alias
-            q = f'"{t}" OR { " OR ".join([a for a in ([])]) }'
-            articles = fetch_newsapi(q, page_size=limit_per_ticker)
+    headers = {"User-Agent": settings.USER_AGENT}
+    timeout = httpx.Timeout(settings.FETCH_TIMEOUT_SECS)
+    base_url = "https://newsapi.org/v2/everything"
+
+    all_items: List[Dict[str, Any]] = []
+
+    with httpx.Client(timeout=timeout, headers=headers) as client:
+        for symbol in (tickers or []):
+            params = {
+                "q": symbol,
+                "pageSize": max(1, int(limit_per_ticker or settings.DEFAULT_PAGE_SIZE)),
+                "sortBy": "publishedAt",
+                "language": "en",
+                "apiKey": settings.NEWSAPI_KEY,
+            }
+            try:
+                resp = client.get(base_url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+            except httpx.HTTPError as e:
+                log.error(f"NewsAPI request failed for {symbol}: {e}")
+                continue
+
+            articles = data.get("articles") or []
             for a in articles:
-                url = a.get("url")
-                if not url:
-                    continue
-                html = a.get("content") or a.get("description") or ""
-                title = a.get("title") or ""
-                source = (a.get("source") or {}).get("name") or "unknown"
-                author = a.get("author")
-                published_at = a.get("publishedAt")
-                try:
-                    published_dt = dt.datetime.fromisoformat(published_at.replace("Z","+00:00")) if published_at else None
-                except Exception:
-                    published_dt = None
+                url = a.get("url") or ""
+                domain = urlparse(url).netloc
+                item = {
+                    "ticker": symbol,
+                    "source_domain": domain,
+                    "source_name": (a.get("source") or {}).get("name"),
+                    "title": a.get("title"),
+                    "url": url,
+                    "published_at": a.get("publishedAt"),
+                    "summary": _excerpt_if_needed(a.get("description") or a.get("content"), domain),
+                    # raw text may be restricted by NewsAPI terms; keep minimal fields unless you fetch page content yourself
+                }
+                all_items.append(item)
 
-                # Clean & hash
-                text = clean_html(html or title)
-                if not text:
-                    continue
-                h = sha256((title + source + (published_at or "")).strip())
+            log.info(f"newsapi fetched={len(articles)} for {symbol}")
 
-                # De-dup by URL or hash
-                already = db.execute(select(Document).where(Document.url == url)).scalar_one_or_none()
-                if already:
-                    skipped += 1
-                    continue
-
-                doc = Document(
-                    url=url,
-                    source=source,
-                    title=title[:1024],
-                    author=author[:255] if author else None,
-                    published_at=published_dt,
-                    clean_text=text,
-                    text_hash=h
-                )
-                db.add(doc)
-                try:
-                    db.flush()  # get doc.id
-                except IntegrityError:
-                    db.rollback()
-                    skipped += 1
-                    continue
-
-                # Link tickers (simple)
-                links = link_tickers(title, text, [t])
-                for tk, rel in links:
-                    db.add(DocTicker(doc_id=doc.id, ticker=tk, relevance=rel))
-
-                inserted += 1
-        db.commit()
-    return {"inserted": inserted, "skipped": skipped}
+    return {"provider": "newsapi", "items": all_items, "count": len(all_items)}
