@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+requests
+beautifulsoup4
+pandas
+torch>=2.6.0
+transformers
+pydantic
+python-multipart
+yfinance
