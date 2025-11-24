@@ -39,9 +39,11 @@ def yfinance_scrape(tickers: Optional[List[str]] = None, max_tickers: Optional[i
     all_headlines = []
 
     for ticker_symbol in tickers:
+        print(f"Scraping news for {ticker_symbol}...")
         try:
             ticker = yf.Ticker(ticker_symbol)
             news = ticker.news
+            print(f"Found {len(news)} articles for {ticker_symbol}")
             
             for item in news:
                 # Extract relevant fields from yfinance news object
