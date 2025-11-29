@@ -14,7 +14,15 @@ def get_ticker_brief(symbol: str):
     # 1. Scrape news
     articles_data = yfinance_scrape(tickers=[symbol], max_tickers=1)
     if not articles_data:
-        raise HTTPException(status_code=404, detail=f"No news found for ticker {symbol}")
+        # Instead of 404, return an empty brief so the UI doesn't crash
+        return TickerBrief(
+            symbol=symbol.upper(),
+            bullish_count=0,
+            bearish_count=0,
+            neutral_count=0,
+            articles=[],
+            safety_score=0.5
+        )
 
     # 2. Analyze sentiment
     analyzed_articles = []
