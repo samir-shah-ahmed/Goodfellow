@@ -4,6 +4,11 @@ import { NewsCard } from "@/components/NewsCard";
 import { SafetyBadge } from "@/components/SafetyBadge";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { VolumeCard } from "@/components/VolumeCard";
+import { OptionsCard } from "@/components/OptionsCard";
+import { SentimentBreakdown } from "@/components/SentimentBreakdown";
+import { InsiderCard } from "@/components/InsiderCard";
+import { PriceChart } from "@/components/PriceChart";
 
 interface PageProps {
     params: {
@@ -43,6 +48,15 @@ export default async function TickerPage({ params }: PageProps) {
                             <ArrowLeft className="h-5 w-5" />
                         </Link>
                         <h1 className="text-2xl font-bold text-slate-900">{brief.symbol}</h1>
+                        {brief.price && (
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-xl font-semibold text-slate-900">${brief.price.toFixed(2)}</span>
+                                <span className={`text-sm font-medium ${brief.change_percent && brief.change_percent >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                    {brief.change_percent && brief.change_percent > 0 ? '+' : ''}
+                                    {(brief.change_percent ? brief.change_percent * 100 : 0).toFixed(2)}%
+                                </span>
+                            </div>
+                        )}
                         <SafetyBadge score={brief.safety_score} />
                     </div>
                     <div className="w-1/3 max-w-md hidden md:block">
@@ -63,6 +77,36 @@ export default async function TickerPage({ params }: PageProps) {
                         bearish={brief.bearish_count}
                         neutral={brief.neutral_count}
                     />
+                </div>
+
+                {/* Advanced Metrics Row */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div className="md:col-span-2">
+                        <PriceChart symbol={brief.symbol} />
+                    </div>
+                    <div className="space-y-6">
+                        <VolumeCard
+                            volume={brief.volume}
+                            averageVolume={brief.average_volume}
+                            exchange={brief.exchange}
+                        />
+                        <OptionsCard putCallRatio={brief.put_call_ratio} />
+                    </div>
+                </div>
+
+                {/* Sentiment & Insider Row */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <SentimentBreakdown
+                        retailSentiment={brief.retail_sentiment}
+                        insiderSentiment={brief.insider_sentiment}
+                        institutionalHolders={brief.institutional_holders}
+                    />
+                    <div className="md:col-span-2">
+                        <InsiderCard
+                            corporateInsiders={brief.corporate_insiders}
+                            politicianTrades={brief.politician_trades}
+                        />
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
