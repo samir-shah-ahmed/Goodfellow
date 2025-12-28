@@ -1,4 +1,23 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || (typeof window === 'undefined' ? 'http://127.0.0.1:8000/api/v1' : '/api/v1');
+// Determines the API base URL. 
+// On Vercel, for server-side requests (SSR/SSG), we must use the absolute URL provided by Vercel env.
+// On Client, we use relative path.
+const getBaseUrl = () => {
+    if (typeof window !== 'undefined') {
+        // Client-side: use relative path
+        return '/api/v1';
+    }
+
+    // Server-side
+    if (process.env.VERCEL_URL) {
+        // On Vercel, use the provided environment variable
+        return `https://${process.env.VERCEL_URL}/api/v1`;
+    }
+
+    // Default to localhost for local dev if not defined
+    return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api/v1';
+};
+
+const API_BASE_URL = getBaseUrl();
 
 export interface TickerBrief {
     symbol: string;
@@ -75,9 +94,16 @@ export async function getTickerBrief(symbol: string): Promise<TickerBrief> {
 }
 
 export async function getTrendingTickers(): Promise<string[]> {
-    const res = await fetch(`${API_BASE_URL}/trending`);
-    if (!res.ok) {
-        throw new Error("Failed to fetch trending tickers");
+    try {
+        const res = await fetch(`${API_BASE_URL}/trending`, { next: { revalidate: 60 } });
+        if (!res.ok) {
+            console.error("Failed to fetch trending tickers, status:", res.status);
+            throw new Error("Failed to fetch trending tickers");
+        }
+        return res.json();
+    } catch (e) {
+        console.warn("Error fetching trending tickers (likely during build):", e);
+        // Fallback for build time
+        return ["AAPL", "NVDA", "MSFT", "TSLA", "AMZN", "GOOGL", "META", "BRK-B", "LLY", "AVGO"];
     }
-    return res.json();
 }
