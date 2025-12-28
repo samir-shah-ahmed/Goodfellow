@@ -1,9 +1,10 @@
 {
     "name": "goodfellow-monorepo",
     "version": "1.0.0",
-    "build": "cd frontend && npm install && npm run build"
-},
-"engines": {
-    "node": "22.x"
-}
+    "scripts": {
+        "build": "cd frontend && npm install && npm run build"
+    },
+    "engines": {
+        "node": "22.x"
+    }
 }
